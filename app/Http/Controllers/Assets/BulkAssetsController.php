@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Requests\AssetCheckoutRequest;
 use App\Models\CustomField;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Str;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -653,7 +654,6 @@ class BulkAssetsController extends Controller
             $admin = auth()->user();
 
             $target = $this->determineCheckoutTarget();
-            session()->put(['checkout_to_type' => $target]);
 
             if (! is_array($request->get('selected_assets'))) {
                 return redirect()->route('hardware.bulkcheckout.show')->withInput()->with('error', trans('admin/hardware/message.checkout.no_assets_selected'));
@@ -662,6 +662,17 @@ class BulkAssetsController extends Controller
             $asset_ids = array_filter($request->get('selected_assets'));
 
             $assets = Asset::findOrFail($asset_ids);
+            
+            // Generate unique batch ID for PDF generation AFTER we have the asset IDs
+            $batchId = 'batch_' . now()->format('YmdHis') . '_' . Str::random(8);
+            session()->put([
+                'checkout_to_type' => $target,
+                'checkout_batch_id' => $batchId,
+                'checkout_batch_assets' => $asset_ids, // Store the actual asset IDs
+                'checkout_batch_target' => $target,
+                'checkout_batch_admin' => $admin,
+                'checkout_batch_note' => e($request->get('note'))
+            ]);
 
             // Prevent checking out assets that are already checked out
             if ($assets->pluck('assigned_to')->unique()->filter()->isNotEmpty()) {
@@ -706,7 +717,8 @@ class BulkAssetsController extends Controller
             }
 
             $errors = [];
-            DB::transaction(function () use ($target, $admin, $checkout_at, $expected_checkin, &$errors, $assets, $request) { //NOTE: $errors is passsed by reference!
+            $checkedOutAssets = [];
+            DB::transaction(function () use ($target, $admin, $checkout_at, $expected_checkin, &$errors, $assets, $request, &$checkedOutAssets) { //NOTE: $errors is passsed by reference!
                 foreach ($assets as $asset) {
                     $this->authorize('checkout', $asset);
 
@@ -728,6 +740,8 @@ class BulkAssetsController extends Controller
 
                     if (!$checkout_success) {
                         $errors = array_merge_recursive($errors, $asset->getErrors()->toArray());
+                    } else {
+                        $checkedOutAssets[] = $asset->id;
                     }
                 }
             });

@@ -39,6 +39,7 @@ use Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Osama\LaravelTeamsNotification\TeamsNotification;
+use App\Services\PdfCheckoutService;
 
 class CheckoutableListener
 {
@@ -70,6 +71,9 @@ class CheckoutableListener
      */
     public function onCheckedOut($event)
     {
+        // Generate PDF first, before any other logic
+        $this->handlePdfGeneration($event, 'checkout');
+
         if ($this->shouldNotSendAnyNotifications($event->checkoutable)) {
             return;
         }
@@ -99,20 +103,16 @@ class CheckoutableListener
                     $toMail = (clone $mailable)->locale($notifiable->locale);
                     Mail::to(array_flatten($to))->send($toMail);
                     Log::info('Checkout Mail sent to checkout target');
-                } catch (ClientException $e) {
-                    Log::debug("Exception caught during checkout email: " . $e->getMessage());
-                } catch (Exception $e) {
-                    Log::debug("Exception caught during checkout email: " . $e->getMessage());
+                } catch (\Throwable $e) {
+                    Log::warning("Failed to send checkout email to target: " . $e->getMessage());
                 }
             }
             if (!empty($cc)) {
                 try {
                     $ccMail = (clone $mailable)->locale(Setting::getSettings()->locale);
                     Mail::to(array_flatten($cc))->send($ccMail);
-                } catch (ClientException $e) {
-                    Log::debug("Exception caught during checkout email: " . $e->getMessage());
-                } catch (Exception $e) {
-                    Log::debug("Exception caught during checkout email: " . $e->getMessage());
+                } catch (\Throwable $e) {
+                    Log::warning("Failed to send checkout email to CC: " . $e->getMessage());
                 }
             }
         }
@@ -130,18 +130,15 @@ class CheckoutableListener
             } catch (ClientException $e) {
                 if (strpos($e->getMessage(), 'channel_not_found') !== false) {
                     Log::warning(Setting::getSettings()->webhook_selected . " notification failed: " . $e->getMessage());
-                    return redirect()->back()->with('warning', ucfirst(Setting::getSettings()->webhook_selected) . trans('admin/settings/message.webhook.webhook_channel_not_found'));
                 } else {
-                    Log::error("ClientException caught during checkin notification: " . $e->getMessage());
+                    Log::error("ClientException caught during checkout notification: " . $e->getMessage());
                 }
-                return redirect()->back()->with('warning', ucfirst(Setting::getSettings()->webhook_selected) . trans('admin/settings/message.webhook.webhook_fail'));
             } catch (Exception $e) {
                 Log::warning(ucfirst(Setting::getSettings()->webhook_selected) . ' webhook notification failed:', [
                     'error' => $e->getMessage(),
                     'webhook_endpoint' => Setting::getSettings()->webhook_endpoint,
                     'event' => $event,
                 ]);
-                return redirect()->back()->with('warning', ucfirst(Setting::getSettings()->webhook_selected) . trans('admin/settings/message.webhook.webhook_fail'));
             }
         }
     }
@@ -151,7 +148,10 @@ class CheckoutableListener
      */
     public function onCheckedIn($event)
     {
-        Log::debug('onCheckedIn in the Checkoutable listener fired');
+        // Generate PDF FIRST for Assets (even before notification checks)
+        if ($event->checkoutable instanceof Asset) {
+            $this->handlePdfGeneration($event, 'checkin');
+        }
 
         if ($this->shouldNotSendAnyNotifications($event->checkoutable)) {
             return;
@@ -194,20 +194,16 @@ class CheckoutableListener
                     $toMail = (clone $mailable)->locale($notifiable->locale);
                     Mail::to(array_flatten($to))->send($toMail);
                     Log::info('Checkin Mail sent to checkin target');
-                } catch (ClientException $e) {
-                    Log::debug("Exception caught during checkin email: " . $e->getMessage());
-                } catch (Exception $e) {
-                    Log::debug("Exception caught during checkin email: " . $e->getMessage());
+                } catch (\Throwable $e) {
+                    Log::warning("Failed to send checkin email to target: " . $e->getMessage());
                 }
             }
             if (!empty($cc)) {
                 try {
                     $ccMail = (clone $mailable)->locale(Setting::getSettings()->locale);
                     Mail::to(array_flatten($cc))->send($ccMail);
-                } catch (ClientException $e) {
-                    Log::debug("Exception caught during checkin email: " . $e->getMessage());
-                } catch (Exception $e) {
-                    Log::debug("Exception caught during checkin email: " . $e->getMessage());
+                } catch (\Throwable $e) {
+                    Log::warning("Failed to send checkin email to CC: " . $e->getMessage());
                 }
             }
         }
@@ -226,10 +222,8 @@ class CheckoutableListener
             } catch (ClientException $e) {
                 if (strpos($e->getMessage(), 'channel_not_found') !== false) {
                     Log::warning(Setting::getSettings()->webhook_selected . " notification failed: " . $e->getMessage());
-                    return redirect()->back()->with('warning', ucfirst(Setting::getSettings()->webhook_selected) . trans('admin/settings/message.webhook.webhook_channel_not_found'));
                 } else {
                     Log::error("ClientException caught during checkin notification: " . $e->getMessage());
-                    return redirect()->back()->with('warning', ucfirst(Setting::getSettings()->webhook_selected) . trans('admin/settings/message.webhook.webhook_fail'));
                 }
             } catch (Exception $e) {
                 Log::warning(ucfirst(Setting::getSettings()->webhook_selected) . ' webhook notification failed:', [
@@ -237,7 +231,80 @@ class CheckoutableListener
                     'webhook_endpoint' => Setting::getSettings()->webhook_endpoint,
                     'event' => $event,
                 ]);
-                return redirect()->back()->with('warning', ucfirst(Setting::getSettings()->webhook_selected) . trans('admin/settings/message.webhook.webhook_fail'));
+            }
+        }
+    }
+
+    /**
+     * Handle PDF generation for checkout/checkin operations
+     */
+    private function handlePdfGeneration($event, string $type)
+    {
+        // Only generate PDF for Assets
+        if (!($event->checkoutable instanceof Asset)) {
+            return;
+        }
+
+        $batchId = session('checkout_batch_id');
+        $batchAssetIds = session('checkout_batch_assets', []);
+        
+        // Initialize batch tracking if not exists
+        if (!session()->has('pdf_batch_processed')) {
+            session()->put('pdf_batch_processed', []);
+        }
+        
+        $processedBatches = session('pdf_batch_processed', []);
+        
+        // Check if this batch was already processed
+        if ($batchId && in_array($batchId, $processedBatches)) {
+            return;
+        }
+
+        // For bulk operations
+        if ($batchId && !empty($batchAssetIds)) {
+            $currentAssetIds = session('pdf_current_assets', []);
+            $currentAssetIds[] = $event->checkoutable->id;
+            session()->put('pdf_current_assets', $currentAssetIds);
+            
+            // Check if all assets from the batch have been processed
+            if (count($currentAssetIds) >= count($batchAssetIds)) {
+                $assets = Asset::whereIn('id', $batchAssetIds)->get();
+                $target = session('checkout_batch_target');
+                $admin = session('checkout_batch_admin');
+                $note = session('checkout_batch_note');
+                
+                $pdfService = app(PdfCheckoutService::class);
+                $pdfPath = $pdfService->generateCheckoutPdf($assets, $target, $admin, $note, $type);
+                
+                if ($pdfPath) {
+                    Log::info("Batch PDF generated", ['path' => $pdfPath, 'batch_id' => $batchId]);
+                }
+                
+                // Mark batch as processed
+                $processedBatches[] = $batchId;
+                session()->put('pdf_batch_processed', $processedBatches);
+                
+                // Clean up session
+                session()->forget(['pdf_current_assets', 'checkout_batch_id', 'checkout_batch_assets', 
+                                   'checkout_batch_target', 'checkout_batch_admin', 'checkout_batch_note']);
+            }
+        } else {
+            // For individual checkout/checkin
+            // Load relationships before creating collection
+            if (method_exists($event->checkoutable, 'load')) {
+                $event->checkoutable->load(['model.category', 'assetstatus', 'assignedTo', 'location']);
+            }
+            
+            $assets = collect([$event->checkoutable]);
+            $target = $event->checkedOutTo ?? null;
+            $admin = $type === 'checkout' ? $event->checkedOutBy : $event->checkedInBy;
+            $note = $event->note ?? null;
+            
+            $pdfService = app(PdfCheckoutService::class);
+            $pdfPath = $pdfService->generateCheckoutPdf($assets, $target, $admin, $note, $type);
+            
+            if ($pdfPath) {
+                Log::info("Individual PDF generated", ['path' => $pdfPath, 'asset_id' => $event->checkoutable->id]);
             }
         }
     }
