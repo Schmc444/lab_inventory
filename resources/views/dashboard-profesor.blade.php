@@ -31,7 +31,7 @@
 
     <div class="col-lg-2 col-xs-6">
         <a href="{{ route('apartado.index') }}">
-            <div class="dashboard small-box bg-green">
+            <div class="dashboard small-box bg-blue">
                 <div class="inner">
                     <h3 style="font-size: 20px; min-height: 44px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Apartado de Equipo</h3>
                     <p>Transacciones</p>
