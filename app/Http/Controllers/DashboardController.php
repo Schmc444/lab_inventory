@@ -25,17 +25,43 @@ class DashboardController extends Controller
      */
     public function index() : View | RedirectResponse
     {
-        // Show the page
+        $user = auth()->user();
+        
+        // Check if user is an Operador (group id 3)
+        if ($user->groups && $user->groups->contains('id', 3)) {
+            $counts['bulkcheckout'] = 0;
+            $counts['quickcheckin'] = 0;
+            $counts['asset'] = \App\Models\Asset::count();
+            $counts['accessory'] = \App\Models\Accessory::count();
+            $counts['component'] = \App\Models\Component::count();
+            $counts['grand_total'] = $counts['asset'] + $counts['accessory'] + $counts['component'];
+
+            return view('dashboard-operador')
+                ->with('counts', $counts);
+        }
+
+        if ($user->groups && $user->groups->contains('id', 4)) {
+            $counts['apartado'] = 0;
+            $counts['asset'] = \App\Models\Asset::count();
+            $counts['accessory'] = \App\Models\Accessory::count();
+            $counts['component'] = \App\Models\Component::count();
+            $counts['grand_total'] = $counts['asset'] + $counts['accessory'] + $counts['component'];
+
+            return view('dashboard-profesor')
+                ->with('counts', $counts);
+        }
+        
+        // Show the admin dashboard
         if (auth()->user()->hasAccess('admin')) {
             $asset_stats = null;
 
             // Base counts for the dashboard boxes
             $counts['bulkcheckout'] = 0;
-            $counts['quickcheckin'] = 0; // could be updated dynamically if needed
+            $counts['quickcheckin'] = 0;
             $counts['asset'] = \App\Models\Asset::count();
             $counts['accessory'] = \App\Models\Accessory::count();
             $counts['component'] = \App\Models\Component::count();
-            $counts['user'] = \App\Models\Company::scopeCompanyables(auth()->user())->count();
+            $counts['user'] = \App\Models\Company::scopeCompanyables($user)->count();
             $counts['grand_total'] = $counts['asset'] + $counts['accessory'] + $counts['component'] + $counts['user'];
 
             // Ensure Passport keys exist (Snipe-IT specific setup)

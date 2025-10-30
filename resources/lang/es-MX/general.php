@@ -607,8 +607,7 @@ return [
     'use_cloned_image' => 'Clone image from original',
     'use_cloned_image_help' => 'You may clone the original image or you can upload a new one using the upload field below.',
     'use_cloned_no_image_help' => 'This item does not have an associated image and instead inherits from the model or category it belongs to. If you would like to use a specific image for this item, you can upload a new one below.',
-    'footer_credit' => 'Brought to you by SanJoma, maintained by Santi Chacon/TEC and tailored by Josue Montero/UNA <3',
-    'set_password' => 'Set a Password',
+    'footer_credit' => 'Brought to you by SanJoma, maintained by Santi Chacon/TEC :) and tailored by Josue Montero/UNA <3', 'set_password' => 'Set a Password',
 
 
 // Add form placeholders here

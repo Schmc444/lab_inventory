@@ -206,14 +206,14 @@ dir="{{ Helper::determineLanguageDirection() }}">
                                     </form>
                                 </li>
                             @endcan
-                            @can('view', \App\Models\Asset::class)
+                            @can('admin')
                             	<li aria-hidden="true"{!! (request()->is('apartado*') ? ' class="active"' : '') !!}>
-        				<a href="{{ route('apartado.index') }}" tabindex="-1" data-tooltip="true" data-placement="bottom" data-title="Apartado de Equipo">
+        				        <a href="{{ route('apartado.index') }}" tabindex="-1" data-tooltip="true" data-placement="bottom" data-title="Apartado de Equipo">
             					<i class="fas fa-clipboard-list fa-fw"></i>
             					<span class="sr-only">Apartado de Equipo</span>
-       					 </a>
-    				</li>
-			    @endcan
+       					        </a>
+    				            </li>
+			                @endcan
                             @can('admin')
                                 <li class="dropdown" aria-hidden="true">
                                     <a href="#" class="dropdown-toggle" data-toggle="dropdown" tabindex="-1">
