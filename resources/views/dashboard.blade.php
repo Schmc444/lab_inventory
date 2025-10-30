@@ -26,9 +26,45 @@
 </div>
 @endif
 
+
+
 <div class="row">
 
     <!-- panel -->
+
+    <div class="col-lg-2 col-xs-6">
+        <a href="{{ route('hardware.bulkcheckout.show') }}">
+            <div class="dashboard small-box bg-green">
+                <div class="inner">
+                    <h3 style="font-size: 20px; min-height: 44px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Asignacion de Equipo</h3>
+                    <p>Transacciones</p>
+                </div>
+                <div class="icon" aria-hidden="true">
+                    <i class="fas fa-sign-out-alt"></i>
+                </div>
+                <span class="small-box-footer">
+                    Ir <i class="fa fa-arrow-circle-right"></i>
+                </span>
+            </div>
+        </a>
+    </div>
+    <div class="col-lg-2 col-xs-6">
+        <a href="{{ url('hardware/quickscancheckin') }}">
+            <div class="dashboard small-box bg-red">
+                <div class="inner">
+                    <h3 style="font-size: 20px; min-height: 44px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Ingreso de Equipo</h3>
+                    <p>Transacciones</p>
+                </div>
+                <div class="icon" aria-hidden="true">
+                    <i class="fas fa-sign-in-alt"></i>
+                </div>
+                <span class="small-box-footer">
+                    Ir <i class="fa fa-arrow-circle-right"></i>
+                </span>
+            </div>
+        </a>
+    </div>
+
     <div class="col-lg-2 col-xs-6">
         <a href="{{ route('hardware.index') }}">
             <!-- small hardware box -->
@@ -49,26 +85,6 @@
     </div><!-- ./col -->
 
     <div class="col-lg-2 col-xs-6">
-        <a href="{{ route('licenses.index') }}" aria-hidden="true">
-            <!-- small license box -->
-            <div class="dashboard small-box bg-maroon">
-                <div class="inner">
-                    <h3>{{ number_format($counts['license']) }}</h3>
-                    <p>{{ trans('general.licenses') }}</p>
-                </div>
-                <div class="icon" aria-hidden="true">
-                    <x-icon type="licenses" />
-                </div>
-                <span class="small-box-footer">
-                    {{ trans('general.view_all') }}
-                    <x-icon type="arrow-circle-right" />
-                </span>
-            </div>
-        </a>
-    </div><!-- ./col -->
-
-
-    <div class="col-lg-2 col-xs-6">
     <!-- small accessories box -->
         <a href="{{ route('accessories.index') }}">
             <div class="dashboard small-box bg-orange">
@@ -82,25 +98,6 @@
                 <span class="small-box-footer">
                     {{ trans('general.view_all') }}
                 <x-icon type="arrow-circle-right" />
-                </span>
-            </div>
-        </a>
-    </div><!-- ./col -->
-
-    <div class="col-lg-2 col-xs-6">
-    <!-- small consumables box -->
-        <a href="{{ route('consumables.index') }}">
-            <div class="dashboard small-box bg-purple">
-                <div class="inner">
-                    <h3> {{ number_format($counts['consumable']) }}</h3>
-                    <p>{{ trans('general.consumables') }}</p>
-                </div>
-                <div class="icon" aria-hidden="true">
-                    <x-icon type="consumables" />
-                </div>
-                <span class="small-box-footer">
-                    {{ trans('general.view_all') }}
-                    <x-icon type="arrow-circle-right" />
                 </span>
             </div>
         </a>

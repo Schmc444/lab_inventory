@@ -4,16 +4,15 @@ namespace App\Http\Controllers;
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Http\RedirectResponse;
-use \Illuminate\Contracts\View\View;
+use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Session;
-
 
 /**
  * This controller handles all actions related to the Admin Dashboard
  * for the Snipe-IT Asset Management application.
  *
  * @author A. Gianotto <snipe@snipe.net>
- * @version v1.0
+ * @version v1.1
  */
 class DashboardController extends Controller
 {
@@ -30,20 +29,24 @@ class DashboardController extends Controller
         if (auth()->user()->hasAccess('admin')) {
             $asset_stats = null;
 
+            // Base counts for the dashboard boxes
+            $counts['bulkcheckout'] = 0;
+            $counts['quickcheckin'] = 0; // could be updated dynamically if needed
             $counts['asset'] = \App\Models\Asset::count();
             $counts['accessory'] = \App\Models\Accessory::count();
-            $counts['license'] = \App\Models\License::assetcount();
-            $counts['consumable'] = \App\Models\Consumable::count();
             $counts['component'] = \App\Models\Component::count();
             $counts['user'] = \App\Models\Company::scopeCompanyables(auth()->user())->count();
-            $counts['grand_total'] = $counts['asset'] + $counts['accessory'] + $counts['license'] + $counts['consumable'];
+            $counts['grand_total'] = $counts['asset'] + $counts['accessory'] + $counts['component'] + $counts['user'];
 
+            // Ensure Passport keys exist (Snipe-IT specific setup)
             if ((! file_exists(storage_path().'/oauth-private.key')) || (! file_exists(storage_path().'/oauth-public.key'))) {
                 Artisan::call('migrate', ['--force' => true]);
                 Artisan::call('passport:install', ['--no-interaction' => true]);
             }
 
-            return view('dashboard')->with('asset_stats', $asset_stats)->with('counts', $counts);
+            return view('dashboard')
+                ->with('asset_stats', $asset_stats)
+                ->with('counts', $counts);
         } else {
             Session::reflash();
 
