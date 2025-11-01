@@ -88,33 +88,9 @@ class CheckoutableListener
             return;
         }
 
+        // Handle bulk email notifications
         if ($shouldSendEmailToUser || $shouldSendEmailToAlertAddress) {
-            $mailable = $this->getCheckoutMailType($event, $acceptance);
-            $notifiable = $this->getNotifiableUser($event);
-
-            $notifiableHasEmail = $notifiable instanceof User && $notifiable->email;
-
-            $shouldSendEmailToUser = $shouldSendEmailToUser && $notifiableHasEmail;
-
-            [$to, $cc] = $this->generateEmailRecipients($shouldSendEmailToUser, $shouldSendEmailToAlertAddress, $notifiable);
-
-            if (!empty($to)) {
-                try {
-                    $toMail = (clone $mailable)->locale($notifiable->locale);
-                    Mail::to(array_flatten($to))->send($toMail);
-                    Log::info('Checkout Mail sent to checkout target');
-                } catch (\Throwable $e) {
-                    Log::warning("Failed to send checkout email to target: " . $e->getMessage());
-                }
-            }
-            if (!empty($cc)) {
-                try {
-                    $ccMail = (clone $mailable)->locale(Setting::getSettings()->locale);
-                    Mail::to(array_flatten($cc))->send($ccMail);
-                } catch (\Throwable $e) {
-                    Log::warning("Failed to send checkout email to CC: " . $e->getMessage());
-                }
-            }
+            $this->handleBulkEmailNotification($event, 'checkout', $shouldSendEmailToUser, $shouldSendEmailToAlertAddress, $acceptance);
         }
 
         if ($shouldSendWebhookNotification) {
@@ -148,18 +124,39 @@ class CheckoutableListener
      */
     public function onCheckedIn($event)
     {
+        // FORCE log to file
+        file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+            date('Y-m-d H:i:s') . " - onCheckedIn called for asset: " . ($event->checkoutable->id ?? 'N/A') . 
+            " | batch_id: " . session('checkin_batch_id', 'NO SESSION') . "\n", 
+            FILE_APPEND
+        );
+
         // Generate PDF FIRST for Assets (even before notification checks)
         if ($event->checkoutable instanceof Asset) {
             $this->handlePdfGeneration($event, 'checkin');
         }
 
-        if ($this->shouldNotSendAnyNotifications($event->checkoutable)) {
+        $shouldNotSend = $this->shouldNotSendAnyNotifications($event->checkoutable);
+        file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+            date('Y-m-d H:i:s') . " - shouldNotSendAnyNotifications: " . ($shouldNotSend ? 'TRUE (RETURNING)' : 'FALSE') . "\n", 
+            FILE_APPEND
+        );
+        
+        if ($shouldNotSend) {
             return;
         }
 
         $shouldSendEmailToUser = $this->checkoutableCategoryShouldSendEmail($event->checkoutable);
         $shouldSendEmailToAlertAddress = $this->shouldSendEmailToAlertAddress();
         $shouldSendWebhookNotification = $this->shouldSendWebhookNotification();
+        
+        file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+            date('Y-m-d H:i:s') . " - Email flags: user=" . ($shouldSendEmailToUser ? 'YES' : 'NO') . 
+            " | alert=" . ($shouldSendEmailToAlertAddress ? 'YES' : 'NO') . 
+            " | webhook=" . ($shouldSendWebhookNotification ? 'YES' : 'NO') . "\n", 
+            FILE_APPEND
+        );
+        
         if (!$shouldSendEmailToUser && !$shouldSendEmailToAlertAddress && !$shouldSendWebhookNotification) {
             return;
         }
@@ -180,32 +177,18 @@ class CheckoutableListener
                 }
             }
 
-            $mailable = $this->getCheckinMailType($event);
-            $notifiable = $this->getNotifiableUser($event);
-
-            $notifiableHasEmail = $notifiable instanceof User && $notifiable->email;
-
-            $shouldSendEmailToUser = $shouldSendEmailToUser && $notifiableHasEmail;
-
-            [$to, $cc] = $this->generateEmailRecipients($shouldSendEmailToUser, $shouldSendEmailToAlertAddress, $notifiable);
-
-            if (!empty($to)) {
-                try {
-                    $toMail = (clone $mailable)->locale($notifiable->locale);
-                    Mail::to(array_flatten($to))->send($toMail);
-                    Log::info('Checkin Mail sent to checkin target');
-                } catch (\Throwable $e) {
-                    Log::warning("Failed to send checkin email to target: " . $e->getMessage());
-                }
-            }
-            if (!empty($cc)) {
-                try {
-                    $ccMail = (clone $mailable)->locale(Setting::getSettings()->locale);
-                    Mail::to(array_flatten($cc))->send($ccMail);
-                } catch (\Throwable $e) {
-                    Log::warning("Failed to send checkin email to CC: " . $e->getMessage());
-                }
-            }
+            // Handle bulk email notifications for checkin
+            file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+                date('Y-m-d H:i:s') . " - ABOUT TO CALL handleBulkEmailNotification\n", 
+                FILE_APPEND
+            );
+            
+            $this->handleBulkEmailNotification($event, 'checkin', $shouldSendEmailToUser, $shouldSendEmailToAlertAddress);
+            
+            file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+                date('Y-m-d H:i:s') . " - RETURNED FROM handleBulkEmailNotification\n", 
+                FILE_APPEND
+            );
         }
 
         if ($shouldSendWebhookNotification) {
@@ -294,10 +277,10 @@ class CheckoutableListener
                 $processedBatches[] = $batchId;
                 session()->put('pdf_batch_processed', $processedBatches);
                 
-                // Clean up session
-                session()->forget(['pdf_current_assets', 'checkout_batch_id', 'checkout_batch_assets', 
-                                   'checkout_batch_target', 'checkout_batch_admin', 'checkout_batch_note',
-                                   'checkin_batch_id', 'checkin_batch_assets', 'checkin_batch_admin', 'checkin_batch_note']);
+                // IMPORTANT: Don't clean up session here!
+                // Let handleBulkEmailNotification clean up after sending emails
+                // Only clean up PDF-specific data
+                session()->forget(['pdf_current_assets']);
             }
         } else {
             // For individual checkout/checkin
@@ -589,5 +572,167 @@ class CheckoutableListener
                 $checkoutable instanceof Component => $checkoutable->category,
             $checkoutable instanceof LicenseSeat => $checkoutable->license->category,
         };
+    }
+
+    /**
+     * Handle bulk email notifications for checkout/checkin operations
+     */
+    private function handleBulkEmailNotification($event, string $type, bool $shouldSendEmailToUser, bool $shouldSendEmailToAlertAddress, $acceptance = null)
+    {
+        file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+            date('Y-m-d H:i:s') . " - INSIDE handleBulkEmailNotification for asset " . $event->checkoutable->id . "\n", 
+            FILE_APPEND
+        );
+
+        // Only process for Assets
+        if (!($event->checkoutable instanceof Asset)) {
+            file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+                date('Y-m-d H:i:s') . " - Not an Asset, returning\n", 
+                FILE_APPEND
+            );
+            return;
+        }
+
+        // Check for both checkout and checkin batch IDs
+        $batchId = session('checkout_batch_id') ?? session('checkin_batch_id');
+        $batchAssetIds = session('checkout_batch_assets', []) ?: session('checkin_batch_assets', []);
+        
+        file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+            date('Y-m-d H:i:s') . " - batch_id: " . ($batchId ?? 'NULL') . " | assets_count: " . count($batchAssetIds) . "\n", 
+            FILE_APPEND
+        );
+        
+        Log::info('handleBulkEmailNotification called', [
+            'type' => $type,
+            'asset_id' => $event->checkoutable->id,
+            'batch_id' => $batchId,
+            'batch_assets_count' => count($batchAssetIds)
+        ]);
+        
+        // Initialize batch email tracking if not exists
+        if (!session()->has('email_batch_processed')) {
+            session()->put('email_batch_processed', []);
+        }
+        
+        $processedEmailBatches = session('email_batch_processed', []);
+        
+        // Check if this batch email was already processed
+        if ($batchId && in_array($batchId, $processedEmailBatches)) {
+            return;
+        }
+
+        // For bulk operations (checkout or checkin)
+        if ($batchId && !empty($batchAssetIds)) {
+            // Track processed assets for email
+            $currentEmailAssetIds = session('email_current_assets', []);
+            $currentEmailAssetIds[] = $event->checkoutable->id;
+            session()->put('email_current_assets', $currentEmailAssetIds);
+            
+            // If not all assets have been processed yet, just return (don't send individual email)
+            if (count($currentEmailAssetIds) < count($batchAssetIds)) {
+                return;
+            }
+            
+            // All assets from the batch have been processed, send bulk email
+            if (count($currentEmailAssetIds) >= count($batchAssetIds)) {
+                $assets = Asset::whereIn('id', $batchAssetIds)->with(['model', 'assetstatus'])->get();
+                
+                // Get target and admin based on operation type
+                if ($type === 'checkout') {
+                    $target = session('checkout_batch_target');
+                    $admin = session('checkout_batch_admin');
+                    $note = session('checkout_batch_note');
+                    $mailable = new \App\Mail\BulkCheckoutAssetMail($assets, $target, $admin, $note);
+                } else {
+                    $target = null;
+                    $admin = session('checkin_batch_admin');
+                    $note = session('checkin_batch_note');
+                    $mailable = new \App\Mail\BulkCheckinAssetMail($assets, $admin, $note);
+                }
+                
+                $notifiable = $this->getNotifiableUser($event);
+                $notifiableHasEmail = $notifiable instanceof User && $notifiable->email;
+                $shouldSendEmailToUser = $shouldSendEmailToUser && $notifiableHasEmail;
+                
+                [$to, $cc] = $this->generateEmailRecipients($shouldSendEmailToUser, $shouldSendEmailToAlertAddress, $notifiable);
+                
+                if (!empty($to)) {
+                    try {
+                        $toMail = (clone $mailable)->locale($notifiable->locale);
+                        Mail::to(array_flatten($to))->send($toMail);
+                        Log::info('Bulk ' . $type . ' Mail sent to target', ['batch_id' => $batchId, 'count' => count($assets)]);
+                    } catch (\Throwable $e) {
+                        Log::warning("Failed to send bulk " . $type . " email to target: " . $e->getMessage());
+                    }
+                }
+                
+                if (!empty($cc)) {
+                    try {
+                        $ccMail = (clone $mailable)->locale(Setting::getSettings()->locale);
+                        Mail::to(array_flatten($cc))->send($ccMail);
+                        Log::info('Bulk ' . $type . ' Mail sent to CC', ['batch_id' => $batchId]);
+                    } catch (\Throwable $e) {
+                        Log::warning("Failed to send bulk " . $type . " email to CC: " . $e->getMessage());
+                    }
+                }
+                
+                // Mark batch as processed for email
+                $processedEmailBatches[] = $batchId;
+                session()->put('email_batch_processed', $processedEmailBatches);
+                
+                // Clean up ALL batch session data after sending bulk email
+                session()->forget([
+                    'email_current_assets',
+                    'checkout_batch_id', 'checkout_batch_assets', 
+                    'checkout_batch_target', 'checkout_batch_admin', 'checkout_batch_note',
+                    'checkin_batch_id', 'checkin_batch_assets', 
+                    'checkin_batch_admin', 'checkin_batch_note'
+                ]);
+                
+                Log::info('Batch session cleaned up after sending bulk email', ['batch_id' => $batchId]);
+                
+                // CRITICAL: Return here to prevent sending individual emails
+                return;
+            }
+            
+            // If we're here, it means we're in a batch but not the last asset yet
+            // So we should NOT send individual email, just return
+            return;
+        }
+        
+        // Only reach here if NOT a batch operation - send individual email
+        if (true) {
+            // For individual checkout/checkin, send normal email
+            if ($type === 'checkout') {
+                $mailable = $this->getCheckoutMailType($event, $acceptance);
+            } else {
+                $mailable = $this->getCheckinMailType($event);
+            }
+            
+            $notifiable = $this->getNotifiableUser($event);
+            $notifiableHasEmail = $notifiable instanceof User && $notifiable->email;
+            $shouldSendEmailToUser = $shouldSendEmailToUser && $notifiableHasEmail;
+            
+            [$to, $cc] = $this->generateEmailRecipients($shouldSendEmailToUser, $shouldSendEmailToAlertAddress, $notifiable);
+            
+            if (!empty($to)) {
+                try {
+                    $toMail = (clone $mailable)->locale($notifiable->locale);
+                    Mail::to(array_flatten($to))->send($toMail);
+                    Log::info(ucfirst($type) . ' Mail sent to target');
+                } catch (\Throwable $e) {
+                    Log::warning("Failed to send " . $type . " email to target: " . $e->getMessage());
+                }
+            }
+            
+            if (!empty($cc)) {
+                try {
+                    $ccMail = (clone $mailable)->locale(Setting::getSettings()->locale);
+                    Mail::to(array_flatten($cc))->send($ccMail);
+                } catch (\Throwable $e) {
+                    Log::warning("Failed to send " . $type . " email to CC: " . $e->getMessage());
+                }
+            }
+        }
     }
 }
