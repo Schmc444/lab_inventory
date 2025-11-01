@@ -157,27 +157,83 @@
 <script nonce="{{ csrf_token() }}">
     $(function () {
         //if there's already a user selected, make sure their checked-out assets show up
-        // (if there isn't one, it won't do anything)
         $('#assigned_user').change();
 
-        // Add the disabled attribute to empty inputs on submit to handle the case where someone does not pick a status ID
-        // and the form is submitted with an empty status ID which will fail validation via the form request
+        // Add the disabled attribute to empty inputs on submit
         $("form").submit(function() {
             $(this).find(":input").filter(function(){ return !this.value; }).attr("disabled", "disabled");
-            return true; // ensure form still submits
+            return true;
         });
 
+        // ===== BARCODE SCANNER AUTO-SELECTION =====
+        let searchTimeout;
+        const DEBOUNCE_DELAY = 300; // Wait 300ms after last input
+
+        // Monitor the Select2 search field for assets
+        $(document).on('input', '#assets_to_checkout_div .select2-search__field', function(e) {
+            const $searchField = $(this);
+            const searchValue = $searchField.val().trim();
+
+            clearTimeout(searchTimeout);
+
+            if (!searchValue) return;
+
+            // Wait for complete barcode input
+            searchTimeout = setTimeout(function() {
+                const $select = $('#assigned_assets_select');
+                const $results = $('#assets_to_checkout_div .select2-results__option');
+                
+                // Filter valid results only
+                const $validResults = $results.filter(function() {
+                    return !$(this).hasClass('select2-results__message') && 
+                           !$(this).hasClass('loading-results');
+                });
+
+                // Auto-select if exactly one match
+                if ($validResults.length === 1) {
+                    $validResults.first().trigger('mouseup');
+                    $searchField.val('');
+                    
+                    // Keep dropdown open for next scan
+                    setTimeout(function() {
+                        $select.select2('open');
+                        $('#assets_to_checkout_div .select2-search__field').focus();
+                    }, 100);
+                }
+            }, DEBOUNCE_DELAY);
+        });
+
+        // Handle Enter key from barcode scanner
+        $(document).on('keydown', '#assets_to_checkout_div .select2-search__field', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                
+                const $results = $('#assets_to_checkout_div .select2-results__option');
+                const $validResults = $results.filter(function() {
+                    return !$(this).hasClass('select2-results__message') && 
+                           !$(this).hasClass('loading-results');
+                });
+
+                if ($validResults.length === 1) {
+                    $validResults.first().trigger('mouseup');
+                    $(this).val('');
+                    
+                    setTimeout(function() {
+                        $('#assigned_assets_select').select2('open');
+                        $('#assets_to_checkout_div .select2-search__field').focus();
+                    }, 100);
+                }
+            }
+        });
+
+        // Initialize: Focus and prepare dropdown
         setTimeout(function () {
             const $searchField = $('.select2-search__field');
             const $results = $('.select2-results');
 
-            // Focus the search input
             $searchField.focus();
-
-            // Hide results initially
             $results.hide();
 
-            // Show results when a user starts typing
             $searchField.on('input', function () {
                 $results.show();
             });
