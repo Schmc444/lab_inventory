@@ -497,6 +497,13 @@ Route::group(['prefix' => 'v1', 'middleware' => ['api', 'api-throttle:api']], fu
             ]
         )->name('api.asset.checkinbytag');
 
+        Route::post('bulk-checkin-by-tags',
+            [
+                Api\AssetsController::class,
+                'bulkCheckinByTags'
+            ]
+        )->name('api.asset.bulkCheckinByTags');
+
         Route::get('byserial/{any}',
             [
                 Api\AssetsController::class, 

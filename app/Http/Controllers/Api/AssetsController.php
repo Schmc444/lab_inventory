@@ -1074,6 +1074,126 @@ class AssetsController extends Controller
         ], 'Asset with tag ' . e($tag) . ' not found'));
     }
 
+    /**
+     * Bulk checkin assets by their tags
+     *
+     * @author [J. Movi] [<jmovi093@gmail.com>]
+     * @since [v7.0]
+     */
+    public function bulkCheckinByTags(Request $request): JsonResponse
+    {
+        $this->authorize('checkin', Asset::class);
+        
+        $assetTags = $request->input('asset_tags', []);
+        $statusId = $request->input('status_id');
+        $locationId = $request->input('location_id');
+        $note = $request->input('note');
+        
+        if (empty($assetTags)) {
+            return response()->json(Helper::formatStandardApiResponse('error', [], 'No assets provided'));
+        }
+        
+        $assets = Asset::whereIn('asset_tag', $assetTags)->get();
+        
+        if ($assets->isEmpty()) {
+            return response()->json(Helper::formatStandardApiResponse('error', [], 'No assets found'));
+        }
+        
+        // Generate unique batch ID for PDF generation
+        $batchId = 'checkin_batch_' . now()->format('YmdHis') . '_' . \Illuminate\Support\Str::random(8);
+        $assetIds = $assets->pluck('id')->toArray();
+        
+        // Store batch information in session for PDF generation
+        session()->put([
+            'checkin_batch_id' => $batchId,
+            'checkin_batch_assets' => $assetIds,
+            'checkin_batch_admin' => auth()->user(),
+            'checkin_batch_note' => $note
+        ]);
+        
+        $successCount = 0;
+        $errors = [];
+        
+        \Illuminate\Support\Facades\DB::transaction(function () use ($assets, $statusId, $locationId, $note, &$successCount, &$errors, $request) {
+            foreach ($assets as $asset) {
+                try {
+                    $target = $asset->assignedTo;
+                    
+                    if (is_null($target)) {
+                        $errors[] = [
+                            'asset_tag' => $asset->asset_tag,
+                            'message' => trans('admin/hardware/message.checkin.already_checked_in')
+                        ];
+                        continue;
+                    }
+                    
+                    $asset->expected_checkin = null;
+                    $asset->last_checkin = now();
+                    $asset->assignedTo()->disassociate($asset);
+                    $asset->accepted = null;
+                    $asset->location_id = $asset->rtd_location_id;
+                    
+                    if ($locationId) {
+                        $asset->location_id = $locationId;
+                    }
+                    
+                    if ($statusId) {
+                        $asset->status_id = $statusId;
+                    }
+                    
+                    $checkin_at = date('Y-m-d H:i:s');
+                    $originalValues = $asset->getRawOriginal();
+                    
+                    $asset->licenseseats->each(function (\App\Models\LicenseSeat $seat) {
+                        $seat->update(['assigned_to' => null]);
+                    });
+                    
+                    // Get all pending Acceptances for this asset and delete them
+                    \App\Models\CheckoutAcceptance::pending()
+                        ->whereHasMorph(
+                            'checkoutable',
+                            [\App\Models\Asset::class],
+                            function (\Illuminate\Database\Eloquent\Builder $query) use ($asset) {
+                                $query->where('id', $asset->id);
+                            }
+                        )
+                        ->get()
+                        ->map(function ($acceptance) {
+                            $acceptance->delete();
+                        });
+                    
+                    if ($asset->save()) {
+                        event(new \App\Events\CheckoutableCheckedIn($asset, $target, auth()->user(), $note, $checkin_at, $originalValues));
+                        $successCount++;
+                    } else {
+                        $errors[] = [
+                            'asset_tag' => $asset->asset_tag,
+                            'message' => 'Failed to save asset'
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'asset_tag' => $asset->asset_tag,
+                        'message' => $e->getMessage()
+                    ];
+                }
+            }
+        });
+        
+        if ($successCount > 0 && empty($errors)) {
+            return response()->json(Helper::formatStandardApiResponse('success', [
+                'count' => $successCount
+            ], trans('admin/hardware/message.checkin.success')));
+        } elseif ($successCount > 0 && !empty($errors)) {
+            return response()->json(Helper::formatStandardApiResponse('success', [
+                'count' => $successCount,
+                'errors' => $errors
+            ], 'Partial success'));
+        } else {
+            return response()->json(Helper::formatStandardApiResponse('error', ['errors' => $errors], 'All checkins failed'));
+        }
+    }
+
 
     /**
      * Mark an asset as audited

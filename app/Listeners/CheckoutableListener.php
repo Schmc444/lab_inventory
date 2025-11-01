@@ -245,8 +245,9 @@ class CheckoutableListener
             return;
         }
 
-        $batchId = session('checkout_batch_id');
-        $batchAssetIds = session('checkout_batch_assets', []);
+        // Check for both checkout and checkin batch IDs
+        $batchId = session('checkout_batch_id') ?? session('checkin_batch_id');
+        $batchAssetIds = session('checkout_batch_assets', []) ?: session('checkin_batch_assets', []);
         
         // Initialize batch tracking if not exists
         if (!session()->has('pdf_batch_processed')) {
@@ -260,7 +261,7 @@ class CheckoutableListener
             return;
         }
 
-        // For bulk operations
+        // For bulk operations (checkout or checkin)
         if ($batchId && !empty($batchAssetIds)) {
             $currentAssetIds = session('pdf_current_assets', []);
             $currentAssetIds[] = $event->checkoutable->id;
@@ -269,15 +270,24 @@ class CheckoutableListener
             // Check if all assets from the batch have been processed
             if (count($currentAssetIds) >= count($batchAssetIds)) {
                 $assets = Asset::whereIn('id', $batchAssetIds)->get();
-                $target = session('checkout_batch_target');
-                $admin = session('checkout_batch_admin');
-                $note = session('checkout_batch_note');
+                
+                // Get target and admin based on operation type
+                if ($type === 'checkout') {
+                    $target = session('checkout_batch_target');
+                    $admin = session('checkout_batch_admin');
+                    $note = session('checkout_batch_note');
+                } else {
+                    // For checkin, target is null
+                    $target = null;
+                    $admin = session('checkin_batch_admin');
+                    $note = session('checkin_batch_note');
+                }
                 
                 $pdfService = app(PdfCheckoutService::class);
                 $pdfPath = $pdfService->generateCheckoutPdf($assets, $target, $admin, $note, $type);
                 
                 if ($pdfPath) {
-                    Log::info("Batch PDF generated", ['path' => $pdfPath, 'batch_id' => $batchId]);
+                    Log::info("Batch PDF generated", ['path' => $pdfPath, 'batch_id' => $batchId, 'type' => $type]);
                 }
                 
                 // Mark batch as processed
@@ -286,7 +296,8 @@ class CheckoutableListener
                 
                 // Clean up session
                 session()->forget(['pdf_current_assets', 'checkout_batch_id', 'checkout_batch_assets', 
-                                   'checkout_batch_target', 'checkout_batch_admin', 'checkout_batch_note']);
+                                   'checkout_batch_target', 'checkout_batch_admin', 'checkout_batch_note',
+                                   'checkin_batch_id', 'checkin_batch_assets', 'checkin_batch_admin', 'checkin_batch_note']);
             }
         } else {
             // For individual checkout/checkin
