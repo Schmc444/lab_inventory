@@ -44,24 +44,26 @@ class PdfCheckoutService
             // Generate filename
             $timestamp = now()->format('Ymd_His');
             $filename = "{$type}_{$timestamp}_" . $data['batch_id'] . ".pdf";
-            $directory = 'checkouts';
-            
-            // Use public disk (which points to public/uploads in Snipe-IT)
-            $disk = Storage::disk('public');
+            $directory = public_path('uploads/checkouts');
             
             // Ensure directory exists
-            if (!$disk->exists($directory)) {
-                $disk->makeDirectory($directory);
+            if (!is_dir($directory)) {
+                mkdir($directory, 0755, true);
             }
             
-            $path = "{$directory}/{$filename}";
-            $fullPath = public_path("uploads/{$path}");
+            $fullPath = $directory . '/' . $filename;
             
-            // Save PDF
-            $disk->put($path, $pdf->output());
+            // Save PDF directly using file_put_contents
+            $pdfOutput = $pdf->output();
+            $bytesWritten = file_put_contents($fullPath, $pdfOutput);
+            
+            if ($bytesWritten === false) {
+                throw new \Exception("Failed to write PDF to disk");
+            }
             
             Log::info("PDF generated successfully", [
                 'path' => $fullPath,
+                'bytes' => $bytesWritten,
                 'assets_count' => $assets->count(),
                 'type' => $type
             ]);

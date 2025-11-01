@@ -223,14 +223,28 @@ class CheckoutableListener
      */
     private function handlePdfGeneration($event, string $type)
     {
+        file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+            date('Y-m-d H:i:s') . " - [PDF] handlePdfGeneration called for asset " . $event->checkoutable->id . " type: $type\n", 
+            FILE_APPEND
+        );
+
         // Only generate PDF for Assets
         if (!($event->checkoutable instanceof Asset)) {
+            file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+                date('Y-m-d H:i:s') . " - [PDF] Not an Asset, returning\n", 
+                FILE_APPEND
+            );
             return;
         }
 
         // Check for both checkout and checkin batch IDs
         $batchId = session('checkout_batch_id') ?? session('checkin_batch_id');
         $batchAssetIds = session('checkout_batch_assets', []) ?: session('checkin_batch_assets', []);
+        
+        file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+            date('Y-m-d H:i:s') . " - [PDF] batch_id: " . ($batchId ?? 'NULL') . " | batch_assets: " . count($batchAssetIds) . "\n", 
+            FILE_APPEND
+        );
         
         // Initialize batch tracking if not exists
         if (!session()->has('pdf_batch_processed')) {
@@ -252,6 +266,11 @@ class CheckoutableListener
             
             // Check if all assets from the batch have been processed
             if (count($currentAssetIds) >= count($batchAssetIds)) {
+                file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+                    date('Y-m-d H:i:s') . " - [PDF] All assets processed! Generating bulk PDF. Current: " . count($currentAssetIds) . " / Total: " . count($batchAssetIds) . "\n", 
+                    FILE_APPEND
+                );
+
                 $assets = Asset::whereIn('id', $batchAssetIds)->get();
                 
                 // Get target and admin based on operation type
@@ -266,8 +285,18 @@ class CheckoutableListener
                     $note = session('checkin_batch_note');
                 }
                 
+                file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+                    date('Y-m-d H:i:s') . " - [PDF] About to generate PDF. Assets count: " . $assets->count() . "\n", 
+                    FILE_APPEND
+                );
+                
                 $pdfService = app(PdfCheckoutService::class);
                 $pdfPath = $pdfService->generateCheckoutPdf($assets, $target, $admin, $note, $type);
+                
+                file_put_contents(storage_path('logs/DEBUG_CHECKIN.txt'), 
+                    date('Y-m-d H:i:s') . " - [PDF] PDF generation returned: " . ($pdfPath ?? 'NULL') . "\n", 
+                    FILE_APPEND
+                );
                 
                 if ($pdfPath) {
                     Log::info("Batch PDF generated", ['path' => $pdfPath, 'batch_id' => $batchId, 'type' => $type]);

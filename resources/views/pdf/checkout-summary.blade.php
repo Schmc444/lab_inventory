@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ ucfirst($type) }} Resumen</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        
         * {
             margin: 0;
             padding: 0;
@@ -14,7 +12,7 @@
         }
         
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'DejaVu Sans', 'Arial', sans-serif;
             font-size: 11px;
             color: #2c3e50;
             margin: 0;
@@ -254,7 +252,7 @@
                             <td style="font-weight: 600; color: #1e3a5f;">{{ $asset->asset_tag ?? 'N/A' }}</td>
                             <td>{{ $asset->model->category->name ?? 'N/A' }}</td>
                             <td>{{ $asset->model->name ?? 'N/A' }}</td>
-                            <td style="font-family: 'Courier New', monospace; font-size: 10px;">{{ $asset->serial ?? 'N/A' }}</td>
+                            <td style="font-family: monospace; font-size: 10px;">{{ $asset->serial ?? 'N/A' }}</td>
                             <td>{{ $asset->assetstatus->name ?? 'N/A' }}</td>
                             @if($type === 'checkout')
                             <td>{{ $asset->location->name ?? 'N/A' }}</td>
