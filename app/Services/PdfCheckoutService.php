@@ -29,6 +29,10 @@ class PdfCheckoutService
                 }
             });
 
+            // Generate timestamp-based batch ID
+            $timestamp = now()->format('YmdHis'); // Format: 20251110143022
+            session(['checkout_batch_id' => $timestamp]);
+
             $data = [
                 'assets' => $assets,
                 'target' => $target,
@@ -36,14 +40,13 @@ class PdfCheckoutService
                 'note' => $note,
                 'type' => $type,
                 'date' => now()->format('Y-m-d H:i:s'),
-                'batch_id' => session('checkout_batch_id', uniqid()),
+                'batch_id' => session('checkout_batch_id', $timestamp),
             ];
 
             $pdf = Pdf::loadView('pdf.checkout-summary', $data);
             
             // Generate filename
-            $timestamp = now()->format('Ymd_His');
-            $filename = "{$type}_{$timestamp}_" . $data['batch_id'] . ".pdf";
+            $filename = "{$type}_{$timestamp}.pdf";
             $directory = public_path('uploads/checkouts');
             
             // Ensure directory exists

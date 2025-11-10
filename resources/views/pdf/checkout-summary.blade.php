@@ -81,6 +81,12 @@
             line-height: 1.5;
         }
         
+        .info-card .value .secondary {
+            font-size: 13px;
+            color: #6c757d;
+            font-weight: 400;
+        }
+        
         .note-section {
             background: #fff8f0;
             border-left: 3px solid #d55a2a;
@@ -206,7 +212,7 @@
                     <div class="label">Operador</div>
                     <div class="value">
                         {{ $admin->first_name ?? '' }} {{ $admin->last_name ?? '' }}<br>
-                        <span style="font-size: 11px; color: #6c757d; font-weight: 400;">{{ $admin->username ?? 'N/A' }}</span>
+                        <span class="secondary">{{ $admin->username ?? 'N/A' }}</span>
                     </div>
                 </div>
                 
@@ -252,7 +258,7 @@
                             <td style="font-weight: 600; color: #1e3a5f;">{{ $asset->asset_tag ?? 'N/A' }}</td>
                             <td>{{ $asset->model->category->name ?? 'N/A' }}</td>
                             <td>{{ $asset->model->name ?? 'N/A' }}</td>
-                            <td style="font-family: monospace; font-size: 10px;">{{ $asset->serial ?? 'N/A' }}</td>
+                            <td>{{ $asset->serial ?? 'N/A' }}</td>
                             <td>{{ $asset->assetstatus->name ?? 'N/A' }}</td>
                             @if($type === 'checkout')
                             <td>{{ $asset->location->name ?? 'N/A' }}</td>
@@ -266,7 +272,7 @@
 
         <div class="footer">
             <p class="main-text">
-                <strong>Sistema de Inventario The Archivist</strong><br>
+                <strong>Sistema de Inventario del Laboratorio T211</strong><br>
                 Este documento es solo para fines de referencia
             </p>
             <p class="credits">
